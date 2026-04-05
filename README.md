@@ -169,9 +169,7 @@ Une recherche automatique des meilleurs paramètres a été lancée sur un pipel
 
 ## Auteurs
 
-| Nom                     |
-| ----------------------- |
-| ABED MERAIM Abdelbassit |
-| EL ABASS Sidi Mohamed   |
+- ABED MERAIM Abdelbassit
+- EL ABASS Sidi Mohamed
 
 ---
