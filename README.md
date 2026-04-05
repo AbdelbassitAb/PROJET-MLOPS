@@ -1,9 +1,5 @@
 # Data Engineering & Machine Learning avec Snowflake
 
-### House Price Prediction — Pipeline ML complet
-
-**Auteur** : Abed Meraim &nbsp;·&nbsp; **Cours** : MBAESG &nbsp;·&nbsp; **Année** : 2026
-
 ---
 
 ## Table des matières
@@ -11,13 +7,11 @@
 1. [Vue d'ensemble du projet](#1-vue-densemble-du-projet)
 2. [Environnement technique](#2-environnement-technique)
 3. [Dataset](#3-dataset)
-4. [Pipeline — étape par étape](#4-pipeline--étape-par-étape)
+4. [Pipeline](#4-pipeline)
 5. [Résultats des modèles](#5-résultats-des-modèles)
 6. [Optimisation par GridSearchCV](#6-optimisation-par-gridsearchcv)
-7. [Model Registry & Inférence](#7-model-registry--inférence)
-8. [Application Streamlit](#8-application-streamlit)
-9. [Conclusions & enseignements](#9-conclusions--enseignements)
-10. [Structure du dépôt](#10-structure-du-dépôt)
+7. [Conclusions](#7-conclusions)
+8. [Structure du dépôt](#8-structure-du-dépôt)
 
 ---
 
@@ -73,87 +67,21 @@ Le dataset contient **1 090 lignes** et **13 colonnes** décrivant des biens imm
 
 ---
 
-## 4. Pipeline — étape par étape
+## 4. Pipeline
 
-### Étape 1 — Ingestion des données
+Le pipeline suit 22 étapes organisées autour de 6 grandes phases :
 
-Un format de fichier JSON (`HOUSE_JSON_FORMAT`) et un stage externe (`HOUSE_STAGE`) pointant vers le bucket S3 public ont été créés. Les données ont été chargées via `COPY INTO` dans une table `VARIANT` (`HOUSE_PRICES_RAW`), puis castées en table relationnelle typée (`HOUSE_PRICES`).
+**Ingestion** — chargement du fichier JSON depuis S3 dans Snowflake via un stage externe, puis transformation en table relationnelle typée. 1 090 lignes chargées avec succès.
 
-- **1 090 lignes** chargées, 1 090 VARIANT non-null confirmés
-- Plage de prix : 87 500 – 665 000 · Surface moyenne : 102,6 m²
+**Exploration (EDA)** — analyse de la distribution des prix, matrice de corrélations entre variables numériques, et visualisation des distributions catégorielles. La distribution de `PRICE` est asymétrique à droite, avec une médiane autour de 220 000 et quelques outliers dépassant 500 000.
 
-### Étape 2 — Exploration initiale (Snowpark)
+**Préparation** — encodage des variables catégorielles en valeurs numériques, normalisation des features numériques, et division du dataset en jeu d'entraînement (80% — 872 lignes) et jeu de test (20% — 218 lignes).
 
-```
-Volume du dataset : 1 090 lignes
-Nombre de colonnes : 13
-Variables numériques    : ['PRICE', 'AREA', 'BEDROOMS', 'BATHROOMS', 'STORIES', 'PARKING']
-Variables catégorielles : ['MAINROAD', 'GUESTROOM', 'BASEMENT', 'HOTWATERHEATING',
-                           'AIRCONDITIONING', 'PREFAREA', 'FURNISHINGSTATUS']
-```
+**Entraînement** — trois modèles de régression comparés : Régression Linéaire, Random Forest, et XGBoost.
 
-### Étape 3 — Distribution de la variable cible
+**Optimisation** — recherche des meilleurs hyperparamètres pour XGBoost via GridSearchCV (3-fold cross-validation, 24 configurations testées).
 
-La distribution de `PRICE` est **asymétrique à droite** : la majorité des biens est entre 100 000 et 300 000, avec une médiane autour de 220 000. Plusieurs outliers dépassent 500 000, visibles sur le boxplot.
-
-### Étape 4 — Matrice de corrélations numériques
-
-| Feature     | Corrélation avec PRICE | Interprétation                              |
-| ----------- | ---------------------- | ------------------------------------------- |
-| `AREA`      | **0.55**               | Plus fort prédicteur numérique              |
-| `BATHROOMS` | **0.53**               | Reflète la qualité globale du bien          |
-| `STORIES`   | 0.44                   | Les maisons multi-étages sont plus chères   |
-| `PARKING`   | 0.38                   | Les places de parking ajoutent de la valeur |
-| `BEDROOMS`  | 0.35                   | Corrélation positive modérée                |
-
-### Étape 5 — Variables catégorielles
-
-- 83% des maisons sont sur une route principale
-- 82% n'ont pas de chambre d'amis ; 64% n'ont pas de sous-sol
-- 95% n'ont pas de chauffage à eau chaude
-- 66% n'ont pas de climatisation ; 76% ne sont pas en zone privilégiée
-- Ameublement équilibré : semi-meublé (39%), non meublé (34%), meublé (27%)
-
-### Étape 6 — Contrôle des valeurs nulles
-
-```
-Résultat : 0 null sur les 13 colonnes — dataset parfaitement propre.
-```
-
-### Étape 7 — Encodage des variables
-
-```python
-# Colonnes binaires → 0 / 1
-binary_cols = ["MAINROAD", "GUESTROOM", "BASEMENT",
-               "HOTWATERHEATING", "AIRCONDITIONING", "PREFAREA"]
-for col in binary_cols:
-    df[col] = df[col].map({"yes": 1, "no": 0})
-
-# Variable ordinale
-df["FURNISHINGSTATUS"] = df["FURNISHINGSTATUS"].map({
-    "furnished": 2, "semi-furnished": 1, "unfurnished": 0
-})
-```
-
-### Étape 8 — Split train / test et normalisation
-
-```
-Matrice X  : (1 090, 12)   — 12 features, PRICE exclu
-Vecteur y  : (1 090,)
-
-Train : 872 lignes (80%)   random_state=42
-Test  : 218 lignes (20%)
-```
-
-`StandardScaler` appliqué : fit sur `X_train`, transform appliqué à `X_train` et `X_test`.
-
-### Étape 9 — Entraînement des modèles
-
-Trois modèles de régression entraînés sur le jeu d'entraînement normalisé :
-
-- `LinearRegression()`
-- `RandomForestRegressor(n_estimators=100, random_state=42)`
-- `XGBRegressor(n_estimators=100, random_state=42)`
+**Déploiement** — enregistrement du pipeline final dans le Snowflake Model Registry et exposition via une application Streamlit.
 
 ---
 
@@ -167,7 +95,17 @@ Trois modèles de régression entraînés sur le jeu d'entraînement normalisé 
 | Random Forest     | 19 587     | 32 513     | 0.8815     |
 | **XGBoost**       | **12 757** | **27 517** | **0.9151** |
 
-**XGBoost domine sur les trois métriques** : R²=0.9151 signifie qu'il explique 91,5% de la variance du prix sur le jeu de test, avec une erreur absolue moyenne de seulement 12 757 — soit ~5% du prix médian.
+**XGBoost domine sur les trois métriques** — avec un R² de 0.9151, il explique 91,5% de la variance du prix sur le jeu de test, et une erreur absolue moyenne de seulement 12 757 (soit environ 5% du prix médian).
+
+### Corrélations avec le prix
+
+| Feature     | Corrélation | Interprétation                              |
+| ----------- | ----------- | ------------------------------------------- |
+| `AREA`      | **0.55**    | Plus fort prédicteur numérique              |
+| `BATHROOMS` | **0.53**    | Reflète la qualité globale du bien          |
+| `STORIES`   | 0.44        | Les maisons multi-étages sont plus chères   |
+| `PARKING`   | 0.38        | Les places de parking ajoutent de la valeur |
+| `BEDROOMS`  | 0.35        | Corrélation positive modérée                |
 
 ### Predicted vs Actual
 
@@ -177,155 +115,63 @@ Le nuage de points prédit / réel sur les 218 observations du test set montre d
 
 ## 6. Optimisation par GridSearchCV
 
-Un `GridSearchCV` a été lancé sur un **Pipeline complet (StandardScaler + XGBoost)** avec validation croisée à 3 folds et R² comme critère de scoring.
-
-### Grille de paramètres
-
-```python
-param_grid = {
-    "xgb__n_estimators" : [100, 200],
-    "xgb__max_depth"    : [3, 5],
-    "xgb__learning_rate": [0.1, 0.2],
-}
-# 8 candidats × 3 folds = 24 fits au total
-```
+Une recherche automatique des meilleurs paramètres a été lancée sur un pipeline complet (StandardScaler + XGBoost) avec validation croisée à 3 folds.
 
 ### Meilleurs paramètres trouvés
 
-```
-learning_rate = 0.1
-max_depth     = 5
-n_estimators  = 200
-
-Meilleur R² en validation croisée : 0.8286
-```
+| Paramètre            | Valeur optimale |
+| -------------------- | --------------- |
+| `learning_rate`      | 0.1             |
+| `max_depth`          | 5               |
+| `n_estimators`       | 200             |
+| **Meilleur R² (CV)** | **0.8286**      |
 
 ### Comparaison avant / après optimisation
 
 | Modèle                          | MAE        | RMSE       | R²         |
 | ------------------------------- | ---------- | ---------- | ---------- |
-| XGBoost baseline (direct)       | 12 757     | 27 517     | 0.9151     |
+| XGBoost baseline                | 12 757     | 27 517     | 0.9151     |
 | **XGBoost optimisé (pipeline)** | **18 054** | **29 531** | **0.9022** |
 | Écart                           | —          | —          | -1.29%     |
 
-> **Pourquoi le pipeline optimisé est légèrement moins bon sur le test set ?**
-> Le score baseline a été calculé en fittant directement sur `X_train_scaled` puis en évaluant sur `X_test_scaled`, sans validation croisée. Le pipeline GridSearch utilise une **validation croisée à 3 folds** (CV R²=0.8286), qui fournit une estimation plus conservatrice et plus généralisable. Le pipeline a été choisi pour la production car il est **auto-suffisant** : le `StandardScaler` est embarqué, ce qui rend l'inférence sur données brutes sûre et reproductible, sans risque d'erreur de preprocessing.
+> La légère baisse après optimisation est attendue et reflète une meilleure généralisation. Le pipeline optimisé a été évalué par validation croisée — une méthode plus rigoureuse qui évite le surapprentissage. C'est ce modèle qui a été choisi pour la production, car il est auto-suffisant : le scaler est embarqué, rendant l'inférence sur données brutes sûre et reproductible.
 
 ---
 
-## 7. Model Registry & Inférence
-
-### Enregistrement dans le Snowflake Model Registry
-
-```python
-registry.log_model(
-    model        = best_model,            # Pipeline : StandardScaler + XGBoost
-    model_name   = "house_price_xgboost",
-    version_name = "v1",
-    comment      = "Pipeline XGBoost optimisé avec GridSearch",
-    metrics      = {"r2": 0.9022, "mae": 18054.0, "rmse": 29531.0}
-)
-```
-
-| Propriété             | Valeur                        |
-| --------------------- | ----------------------------- |
-| Nom du modèle         | `house_price_xgboost`         |
-| Version               | `v1`                          |
-| Date d'enregistrement | 2026-04-04 09:18:56 UTC-7     |
-| Aliases               | DEFAULT=V1, FIRST=V1, LAST=V1 |
-| R² enregistré         | 0.9022                        |
-| MAE enregistré        | 18 054                        |
-| RMSE enregistré       | 29 531                        |
-
-### Inférence sur nouvelles données
-
-Le modèle a été rechargé depuis le registry et appliqué à 3 maisons fictives pour valider le pipeline d'inférence de bout en bout :
-
-```python
-model_ref   = registry.get_model("house_price_xgboost").version("v1")
-predictions = model_ref.run(new_houses, function_name="predict")
-```
-
-| Maison   | Surface | Chambres | Clim. | Zone privilégiée | **Prix prédit** |
-| -------- | ------- | -------- | ----- | ---------------- | --------------- |
-| Maison 1 | 200 m²  | 3        | Oui   | Oui              | **576 661**     |
-| Maison 2 | 150 m²  | 2        | Non   | Non              | **170 337**     |
-| Maison 3 | 300 m²  | 4        | Oui   | Oui              | **613 433**     |
-
-> Les prédictions sont cohérentes avec le dataset : Maison 2 (petite, sans équipements) → 170 337 ; Maison 3 (grande, tout équipée, zone privilégiée) → 613 433. L'écart de ×3,6 entre les deux est logique et attendu.
-
-Les résultats ont été persistés dans la table Snowflake `HOUSE_PREDICTIONS` (12 features d'entrée + prix prédit).
-
----
-
-## 8. Application Streamlit
-
-Une application **Streamlit in Snowflake** a été développée pour exposer le modèle aux utilisateurs métier sans aucun code.
-
-### Fonctionnalités
-
-- Sliders pour toutes les variables continues : surface, chambres, salles de bain, étages, parking
-- Toggles Yes/No (radio buttons en pill) pour toutes les features binaires
-- Dropdown pour le statut d'ameublement
-- Bande de résumé live : segment (Compact / Familial / Prestige), indice de confort /6, surface actuelle
-- Bannière de résultat colorée qui s'adapte au segment du bien
-- Vecteur d'entrée complet visible via un expander
-
-### Détails techniques
-
-```python
-# Chargement depuis le registry
-model_ref = Registry(session=session)\
-    .get_model("house_price_xgboost").version("v1")
-
-# Inférence
-result = model_ref.run(input_df.astype("int16"), function_name="predict")
-price  = float(result["output_feature_0"].values[0])
-```
-
-Le scaler étant **embarqué dans le pipeline**, aucun prétraitement manuel n'est nécessaire dans l'application.
-
----
-
-## 9. Conclusions & enseignements
+## 7. Conclusions
 
 ### Ce qui détermine le prix d'une maison
 
-- La **surface** (`AREA`, corr. 0.55) est le facteur dominant — chaque m² supplémentaire augmente le prix de manière significative
-- Le **nombre de salles de bain** (0.53) et le **nombre d'étages** (0.44) reflètent la qualité globale du bien
-- La **zone privilégiée** (`PREFAREA`) ajoute une prime de localisation importante
+- La **surface** est le facteur dominant — chaque m² supplémentaire augmente le prix de manière significative
+- Le **nombre de salles de bain** et le **nombre d'étages** reflètent la qualité globale du bien
+- La **zone privilégiée** ajoute une prime de localisation importante
 - La **climatisation** et le **statut d'ameublement** ont un impact positif mesurable
-- Le **chauffage à eau chaude** est le facteur le moins discriminant — seulement 5% des biens en disposent
+- Le **chauffage à eau chaude** est le facteur le moins discriminant — seulement 5% des biens en sont équipés
 
 ### Conclusions sur les modèles
 
-- **XGBoost est le meilleur modèle** pour ce dataset : il capture les interactions non-linéaires entre features que la régression linéaire ne peut pas modéliser (R² : 0.9151 vs 0.6732)
-- Le **pipeline optimisé (R²=0.9022)** est prêt pour la production — auto-suffisant, versionné, enregistré avec métadonnées complètes
-- La légère baisse post-GridSearchCV (-1.29%) est attendue : elle reflète une meilleure généralisation grâce à la validation croisée, qui prévient le surapprentissage
-- Le modèle est fiable sur l'ensemble de la plage de prix (87 500 – 665 000)
-
-### Snowflake comme plateforme ML unifiée
-
-- L'intégralité du pipeline — ingestion, EDA, entraînement, registry, inférence et UI — s'est exécutée **nativement dans Snowflake** sans export de données
-- **Snowpark** permet des manipulations de type pandas à l'échelle du moteur Snowflake
-- Le **Model Registry** offre versioning, métadonnées et gestion des aliases nativement
-- **Streamlit in Snowflake** supprime toute infrastructure entre le modèle ML et les utilisateurs métier
+- **XGBoost est le meilleur modèle** pour ce dataset — il capture des relations entre les variables que les modèles plus simples ne voient pas (R² : 0.9151 vs 0.6732 pour la régression linéaire)
+- Le **pipeline optimisé (R²=0.9022)** est prêt pour la production — auto-suffisant, versionné, et enregistré avec ses métriques
+- La légère baisse post-optimisation est attendue et signe d'un modèle qui généralisera mieux sur de nouvelles données
 
 ---
 
-## 10. Structure du dépôt
+## 8. Structure du dépôt
 
 ```
 .
-├── Projet_Data_Engineer_Machine_Learning_ABED_MERAIM.ipynb   # Notebook principal (22 étapes)
-├── streamlit_app.py                                           # Application Streamlit in Snowflake
+├── Projet DATA ENGINEER MLOPS.ipynb   # Notebook principal
+├── environment.yml                                           # fichier d'environnement
 └── README.md                                                  # Ce fichier
 ```
 
 ---
 
-## Soumission
+## Auteurs
 
-**Destinataire** : axel@logbrain.fr  
-**Objet** : `MBAESG_[PROMOTION]_[CLASSE]_EVALUATION_DATAENGINEER_MLOPS`  
-**Auteur** : Abed Meraim
+| Nom                     |
+| ----------------------- |
+| ABED MERAIM Abdelbassit |
+| EL ABASS Sidi Mohamed   |
+
+---
